@@ -1,0 +1,23 @@
+# ACC 工具注册表
+
+settings:
+  maxConcurrentConnections: 20
+  idleTimeoutMs: 300000
+  features:
+    dynamicHelp: false
+    search: false
+    batch: false
+
+sources:
+  # 开发者工具 — ACC 自身的开发辅助脚本
+  - type: script
+    name: devtools
+    group: dev
+    path: "./scripts"
+
+  # MCP server 示例（需要 server 已经在运行）:
+  # - type: mcp
+  #   name: feishu
+  #   group: feishu
+  #   transport: http
+  #   url: "http://localhost:8080/mcp"

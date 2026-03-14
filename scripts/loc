@@ -1,0 +1,47 @@
+#!/bin/bash
+#ACC: summary: "代码统计 — 按文件类型统计行数、文件数、空行率"
+#ACC: param: name=path type=string desc="要统计的目录（默认当前目录）"
+#ACC: param: name=exclude type=string desc="排除的目录模式（默认 node_modules,dist,.git）"
+
+TARGET_DIR="${path:-.}"
+EXCLUDE="${exclude:-node_modules,dist,.git}"
+
+# 构建 find 的排除参数
+FIND_EXCLUDES=""
+IFS=',' read -ra EXCL_ARRAY <<< "$EXCLUDE"
+for dir in "${EXCL_ARRAY[@]}"; do
+  FIND_EXCLUDES="$FIND_EXCLUDES -path '*/$dir' -prune -o"
+done
+
+echo "=== Code Statistics ==="
+echo "Directory: $(cd "$TARGET_DIR" && pwd)"
+echo ""
+
+# 按扩展名分组统计
+printf "%-12s %8s %8s %8s %8s\n" "Extension" "Files" "Lines" "Code" "Empty"
+printf "%-12s %8s %8s %8s %8s\n" "----------" "------" "------" "------" "------"
+
+TOTAL_FILES=0
+TOTAL_LINES=0
+TOTAL_CODE=0
+TOTAL_EMPTY=0
+
+for ext in ts tsx js jsx json yaml yml md css html sh; do
+  FILES=$(eval "find '$TARGET_DIR' $FIND_EXCLUDES -name '*.$ext' -print" 2>/dev/null | wc -l)
+  if [ "$FILES" -gt 0 ]; then
+    FILE_LIST=$(eval "find '$TARGET_DIR' $FIND_EXCLUDES -name '*.$ext' -print" 2>/dev/null)
+    LINES=$(echo "$FILE_LIST" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+    EMPTY=$(echo "$FILE_LIST" | xargs grep -c '^$' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+    CODE=$((LINES - EMPTY))
+
+    printf "%-12s %8d %8d %8d %8d\n" ".$ext" "$FILES" "$LINES" "$CODE" "$EMPTY"
+
+    TOTAL_FILES=$((TOTAL_FILES + FILES))
+    TOTAL_LINES=$((TOTAL_LINES + LINES))
+    TOTAL_CODE=$((TOTAL_CODE + CODE))
+    TOTAL_EMPTY=$((TOTAL_EMPTY + EMPTY))
+  fi
+done
+
+printf "%-12s %8s %8s %8s %8s\n" "----------" "------" "------" "------" "------"
+printf "%-12s %8d %8d %8d %8d\n" "TOTAL" "$TOTAL_FILES" "$TOTAL_LINES" "$TOTAL_CODE" "$TOTAL_EMPTY"

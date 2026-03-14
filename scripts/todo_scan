@@ -1,0 +1,38 @@
+#!/bin/bash
+#ACC: summary: "TODO/FIXME 扫描 — 列出代码中所有待办标记及上下文"
+#ACC: param: name=path type=string desc="要扫描的目录（默认当前目录）"
+#ACC: param: name=pattern type=string desc="搜索模式（默认 TODO|FIXME|HACK|XXX）"
+
+TARGET_DIR="${path:-.}"
+PATTERN="${pattern:-TODO|FIXME|HACK|XXX}"
+
+echo "=== TODO/FIXME Scan ==="
+echo "Directory: $(cd "$TARGET_DIR" 2>/dev/null && pwd)"
+echo "Pattern: $PATTERN"
+echo ""
+
+RESULTS=$(grep -rn --include='*.ts' --include='*.tsx' --include='*.js' \
+  --include='*.jsx' --include='*.py' --include='*.sh' \
+  --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git \
+  -E "$PATTERN" "$TARGET_DIR" 2>/dev/null)
+
+if [ -z "$RESULTS" ]; then
+  echo "✅ 没有发现待办标记"
+  exit 0
+fi
+
+COUNT=$(echo "$RESULTS" | wc -l)
+echo "📋 发现 $COUNT 个待办标记:"
+echo ""
+
+# 按类型分组
+for tag in TODO FIXME HACK XXX; do
+  TAG_COUNT=$(echo "$RESULTS" | grep -c "$tag" 2>/dev/null)
+  if [ "$TAG_COUNT" -gt 0 ]; then
+    echo "--- $tag ($TAG_COUNT) ---"
+    echo "$RESULTS" | grep "$tag" | while IFS= read -r line; do
+      echo "  $line"
+    done
+    echo ""
+  fi
+done

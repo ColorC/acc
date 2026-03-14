@@ -1,0 +1,33 @@
+#!/bin/bash
+#ACC: summary: "TypeScript 类型检查 — 运行 tsc --noEmit 并输出结构化错误"
+#ACC: param: name=project type=string desc="tsconfig.json 所在目录（默认当前目录）"
+
+PROJECT_DIR="${1:-.}"
+if [ -n "$project" ]; then
+  PROJECT_DIR="$project"
+fi
+
+cd "$PROJECT_DIR" 2>/dev/null || { echo "ERROR: 目录不存在: $PROJECT_DIR"; exit 1; }
+
+if [ ! -f "tsconfig.json" ]; then
+  echo "ERROR: 未找到 tsconfig.json"
+  exit 1
+fi
+
+echo "=== TypeScript Type Check ==="
+echo "Project: $(pwd)"
+echo ""
+
+OUTPUT=$(npx tsc --noEmit 2>&1)
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "✅ 类型检查通过，无错误"
+else
+  ERROR_COUNT=$(echo "$OUTPUT" | grep -c "error TS")
+  echo "❌ 发现 $ERROR_COUNT 个类型错误:"
+  echo ""
+  echo "$OUTPUT"
+fi
+
+exit $EXIT_CODE

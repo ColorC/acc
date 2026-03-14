@@ -1,0 +1,76 @@
+#!/bin/bash
+#ACC: summary: "模块结构分析 — 列出 TS 文件的 export、import 和类/接口定义"
+#ACC: param: name=file type=string required=true desc="要分析的 TypeScript 文件路径"
+
+FILE="$file"
+
+if [ ! -f "$FILE" ]; then
+  echo "ERROR: 文件不存在: $FILE"
+  exit 1
+fi
+
+echo "=== Module Structure: $(basename "$FILE") ==="
+echo "Path: $FILE"
+echo "Lines: $(wc -l < "$FILE")"
+echo ""
+
+# Imports
+IMPORTS=$(grep -n "^import " "$FILE" 2>/dev/null)
+if [ -n "$IMPORTS" ]; then
+  IMPORT_COUNT=$(echo "$IMPORTS" | wc -l)
+  echo "📥 Imports ($IMPORT_COUNT):"
+  echo "$IMPORTS" | while IFS= read -r line; do
+    # 提取 from "xxx" 部分
+    FROM=$(echo "$line" | grep -oP 'from\s+["\x27]([^"\x27]+)["\x27]' | sed 's/from //;s/["\x27]//g')
+    LINE_NUM=$(echo "$line" | cut -d: -f1)
+    echo "  L$LINE_NUM: ← $FROM"
+  done
+  echo ""
+fi
+
+# Exports
+EXPORTS=$(grep -n "^export " "$FILE" 2>/dev/null)
+if [ -n "$EXPORTS" ]; then
+  EXPORT_COUNT=$(echo "$EXPORTS" | wc -l)
+  echo "📤 Exports ($EXPORT_COUNT):"
+  echo "$EXPORTS" | while IFS= read -r line; do
+    LINE_NUM=$(echo "$line" | cut -d: -f1)
+    CONTENT=$(echo "$line" | cut -d: -f2- | sed 's/^[[:space:]]*//')
+    # 提取类型关键字
+    KIND=$(echo "$CONTENT" | grep -oP '^export\s+(default\s+)?(async\s+)?(function|class|interface|type|const|let|enum)' | awk '{print $NF}')
+    NAME=$(echo "$CONTENT" | grep -oP '(?:function|class|interface|type|const|let|enum)\s+\K\w+')
+    if [ -n "$KIND" ] && [ -n "$NAME" ]; then
+      echo "  L$LINE_NUM: $KIND $NAME"
+    else
+      echo "  L$LINE_NUM: $(echo "$CONTENT" | head -c 80)"
+    fi
+  done
+  echo ""
+fi
+
+# Classes and Interfaces (including non-exported)
+DEFS=$(grep -n "^\(export \)\?\(class\|interface\|type\|enum\) " "$FILE" 2>/dev/null)
+if [ -n "$DEFS" ]; then
+  DEF_COUNT=$(echo "$DEFS" | wc -l)
+  echo "🏗️  Type Definitions ($DEF_COUNT):"
+  echo "$DEFS" | while IFS= read -r line; do
+    LINE_NUM=$(echo "$line" | cut -d: -f1)
+    CONTENT=$(echo "$line" | cut -d: -f2- | sed 's/^[[:space:]]*//' | head -c 80)
+    echo "  L$LINE_NUM: $CONTENT"
+  done
+  echo ""
+fi
+
+# Functions
+FUNCS=$(grep -n "^\(export \)\?\(async \)\?function " "$FILE" 2>/dev/null)
+if [ -n "$FUNCS" ]; then
+  FUNC_COUNT=$(echo "$FUNCS" | wc -l)
+  echo "⚡ Functions ($FUNC_COUNT):"
+  echo "$FUNCS" | while IFS= read -r line; do
+    LINE_NUM=$(echo "$line" | cut -d: -f1)
+    # 提取函数名
+    FNAME=$(echo "$line" | grep -oP '(?:function\s+)\K\w+')
+    EXPORTED=$(echo "$line" | grep -q "^export" && echo " [exported]" || echo "")
+    echo "  L$LINE_NUM: $FNAME$EXPORTED"
+  done
+fi

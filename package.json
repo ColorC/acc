@@ -1,0 +1,34 @@
+{
+  "name": "acc",
+  "version": "0.1.0",
+  "description": "Agentic CLI Center \u2014 \u628a\u4efb\u4f55\u6765\u6e90\u7684 Agent \u5de5\u5177\u7edf\u4e00\u8f6c\u6362\u4e3a bash CLI",
+  "type": "module",
+  "bin": {
+    "acc": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "commander": "^13.1.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
