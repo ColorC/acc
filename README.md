@@ -1,3 +1,10 @@
+
+<p align="center">
+  <a href="https://gemini.google.com/">
+    <img src="https://img.shields.io/badge/Made%20with-Gemini-8E75B2?style=for-the-badge&logo=googlebard&logoColor=white" alt="Made with Gemini">
+  </a>
+</p>
+
 # ACC — Agentic CLI Center
 
 > 把任何来源的 Agent 工具统一转换为 bash CLI 入口，让模型用 `--help` 自然发现工具，而不是在每轮对话里携带几万字符的 JSON schema。
