@@ -7,6 +7,8 @@
  * 4. 连接 adapter，获取工具列表
  * 5. 将工具注册到 Registry
  * 6. 处理 aliases
+ * 7. 初始化 SearchEngine（Phase 3，ACC_SEARCH=1）
+ * 8. 初始化 UsageTracker（Phase 3，ACC_DYNAMIC_HELP=1 或 ACC_SEARCH=1）
  */
 
 import { loadConfig } from "./config/index.js";
@@ -14,12 +16,18 @@ import { Registry } from "./registry/index.js";
 import { ConnectionPool } from "./pool.js";
 import { McpAdapter } from "./adapters/mcp.js";
 import { ScriptAdapter } from "./adapters/script.js";
-import type { Adapter, McpSourceConfig, ScriptSourceConfig } from "./types.js";
+import { SearchEngine } from "./search/index.js";
+import { UsageTracker } from "./stats/usage.js";
+import { BatchEngine } from "./batch/engine.js";
+import type { Adapter, McpSourceConfig, ScriptSourceConfig, ToolEntry } from "./types.js";
 
 export interface BootstrapResult {
   registry: Registry;
   pool: ConnectionPool;
   adapters: Adapter[];
+  search: SearchEngine | null;
+  usage: UsageTracker | null;
+  batch: BatchEngine | null;
 }
 
 /**
@@ -108,7 +116,41 @@ export async function bootstrap(
     }
   }
 
-  return { registry, pool, adapters };
+  // Phase 3: 初始化 SearchEngine（ACC_SEARCH=1 或 config.features.search 开启）
+  const searchEnabled =
+    process.env.ACC_SEARCH === "1" || config.settings?.features?.search === true;
+  let search: SearchEngine | null = null;
+  if (searchEnabled) {
+    search = new SearchEngine();
+    await search.buildIndex(registry.list());
+    console.error(`[acc] Search engine initialized (${registry.size} tools indexed)`);
+  }
+
+  // Phase 3: 初始化 UsageTracker（ACC_DYNAMIC_HELP=1 或 ACC_SEARCH=1 时启用）
+  const usageEnabled =
+    process.env.ACC_DYNAMIC_HELP === "1" ||
+    process.env.ACC_SEARCH === "1" ||
+    config.settings?.features?.dynamicHelp === true ||
+    config.settings?.features?.search === true;
+  let usage: UsageTracker | null = null;
+  if (usageEnabled) {
+    const sessionIdx = process.argv.indexOf("--session");
+    const sessionId = sessionIdx !== -1 ? process.argv[sessionIdx + 1] : undefined;
+    const agentIdx = process.argv.indexOf("--agent");
+    const agentId = agentIdx !== -1 ? process.argv[agentIdx + 1] : undefined;
+
+    usage = new UsageTracker(sessionId, agentId);
+    console.error(`[acc] Usage tracker initialized`);
+  }
+
+  let batch: BatchEngine | null = null;
+  const batchEnabled = config.settings?.features?.batch === true || process.env.ACC_BATCH === "1";
+  if (batchEnabled) {
+    batch = new BatchEngine(search);
+    console.error(`[acc] Batch engine initialized`);
+  }
+
+  return { registry, pool, adapters, search, usage, batch };
 }
 
 /**

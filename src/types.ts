@@ -128,3 +128,37 @@ export interface CustomSourceConfig {
   name: string;
   config: string;
 }
+
+// ─── Search Engine 类型 ───
+
+export interface IndexEntry {
+  /** 分组名 */
+  group: string;
+  /** 命令名 */
+  command: string;
+  /** group/command */
+  publicName: string;
+  /** 一句话摘要 */
+  summary: string;
+  /** 预计算的 token 列表（搜索时直接用） */
+  tokens: string[];
+  /** 预计算的语义 Embedding 向量 (长度视模型而定，如 384) */
+  vector?: number[];
+}
+
+export interface SearchResult {
+  entry: IndexEntry;
+  /** 综合分（搜索分 + 频率分） */
+  score: number;
+}
+
+// ─── 频率统计类型 ───
+
+export interface UsageStat {
+  group: string;
+  command: string;
+  count: number;
+  lastUsed: number;
+  sessionId?: string;
+  agentId?: string;
+}

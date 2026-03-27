@@ -3,20 +3,30 @@
  *
  * 对应架构文档 Layer 2 的 Script 部分。
  *
- * 支持两种方式声明参数：
- * 1. 脚本文件头部注释解析（#ACC: 开头）
- * 2. 同名 .yaml 声明文件回退
+ * 跨平台支持:
+ *   Windows: .ps1 (PowerShell), .bat, .cmd
+ *   Linux/macOS: .sh, .bash (需要可执行权限)
  *
- * 注释格式示例:
+ * 参数传递:
+ *   Linux/macOS: 环境变量 $varname
+ *   Windows PS1: 具名参数 -ParamName value（需脚本 param() 块）
+ *   Windows BAT:  环境变量 %varname%
+ *
+ * 注释格式示例（Linux）:
  *   #!/bin/bash
  *   #ACC: summary: "同步数据库备份"
  *   #ACC: param: name=target type=string required=true desc="目标路径"
  *   #ACC: param: name=verbose type=boolean desc="详细输出"
+ *
+ * 注释格式示例（Windows PS1）:
+ *   #ACC: summary: "同步数据库备份"
+ *   #ACC: param: name=target type=string required=true desc="目标路径"
  */
 
-import { readdirSync, readFileSync, statSync, accessSync, constants } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, basename, extname } from "node:path";
 import { spawn } from "node:child_process";
+import { platform } from "node:os";
 import type {
   Adapter,
   RawToolDef,
@@ -53,7 +63,7 @@ export class ScriptAdapter implements Adapter {
       throw new Error(`Script "${toolName}" not found in ${this.config.path}`);
     }
 
-    return runScript(script.path, args);
+    return runScript(script, args);
   }
 
   async close(): Promise<void> {
@@ -88,6 +98,36 @@ interface ScriptInfo {
   path: string;
   summary: string;
   params: ParamDef[];
+  /** 脚本文件扩展名，如 .sh / .ps1 / .bat */
+  ext: string;
+}
+
+// ─── 平台检测 ───
+
+/** Windows 接受的脚本扩展名 */
+const WIN_SCRIPT_EXTS = new Set([".ps1", ".bat", ".cmd"]);
+/** Linux/macOS 接受的脚本扩展名 */
+const POSIX_SCRIPT_EXTS = new Set([".sh", ".bash", ""]);
+
+/**
+ * 判断该扩展名在当前平台是否是合法脚本。
+ * Windows: .ps1 .bat .cmd
+ * Linux/macOS: .sh .bash（无扩展名也允许，常见可执行文件）
+ */
+function isPlatformScript(ext: string): boolean {
+  if (platform() === "win32") return WIN_SCRIPT_EXTS.has(ext);
+  return POSIX_SCRIPT_EXTS.has(ext);
+}
+
+/**
+ * 检查 Linux/macOS 下文件是否设置了执行位。
+ * Windows 下跳过（POSIX X_OK 无意义）。
+ */
+function isExecutable(fullPath: string, _stat: import("node:fs").Stats): boolean {
+  if (platform() === "win32") return true; // Windows 靠扩展名判断，不检查权限位
+  // 检查 stat mode 的执行位（owner/group/other 任一有 x 即可）
+  const mode = Number(_stat.mode);
+  return (mode & 0o111) !== 0;
 }
 
 // ─── 扫描脚本 ───
@@ -110,16 +150,15 @@ function scanScripts(dirPath: string): Map<string, ScriptInfo> {
       const stat = statSync(fullPath);
       if (!stat.isFile()) continue;
 
-      // 跳过 .yaml/.yml（这些是声明文件，不是脚本）
+      // 跳过声明文件
       const ext = extname(entry).toLowerCase();
-      if (ext === ".yaml" || ext === ".yml") continue;
+      if (ext === ".yaml" || ext === ".yml" || ext === ".json") continue;
 
-      // 检查可执行权限
-      try {
-        accessSync(fullPath, constants.X_OK);
-      } catch {
-        continue; // 不可执行，跳过
-      }
+      // 平台脚本过滤
+      if (!isPlatformScript(ext)) continue;
+
+      // 检查执行权限（仅 Linux/macOS）
+      if (!isExecutable(fullPath, stat)) continue;
 
       // 解析脚本注释
       const content = readFileSync(fullPath, "utf-8");
@@ -131,6 +170,7 @@ function scanScripts(dirPath: string): Map<string, ScriptInfo> {
         path: fullPath,
         summary: meta.summary || `Script: ${name}`,
         params: meta.params,
+        ext,
       });
     } catch {
       // 单个脚本解析失败不阻塞
@@ -198,20 +238,69 @@ function parseParamDirective(raw: string): ParamDef | null {
 
 // ─── 执行脚本 ───
 
-function runScript(
+/**
+ * 生成平台对应的 spawn 参数。
+ * - Linux/macOS (.sh/.bash): 直接 spawn，通过环境变量传参（$varname）
+ * - Windows PS1: powershell.exe -ExecutionPolicy Bypass -File <path> -Param value ...
+ * - Windows BAT/CMD: cmd.exe /c <path>，通过环境变量传参（%varname%）
+ */
+function buildSpawnArgs(
   scriptPath: string,
+  ext: string,
+  args: Record<string, unknown>
+): { command: string; spawnArgs: string[]; useEnv: boolean } {
+  if (platform() !== "win32") {
+    return { command: scriptPath, spawnArgs: [], useEnv: true };
+  }
+
+  if (ext === ".ps1") {
+    // PowerShell: -Key value 具名参数
+    const params: string[] = [];
+    for (const [key, value] of Object.entries(args)) {
+      if (value === undefined || value === false) continue;
+      params.push(`-${key}`);
+      if (value !== true) params.push(String(value));
+    }
+    return {
+      command: "powershell.exe",
+      spawnArgs: ["-ExecutionPolicy", "Bypass", "-File", scriptPath, ...params],
+      useEnv: false,
+    };
+  }
+
+  // .bat / .cmd: cmd /c，通过环境变量传参
+  return {
+    command: "cmd.exe",
+    spawnArgs: ["/c", scriptPath],
+    useEnv: true,
+  };
+}
+
+function runScript(
+  scriptInfo: ScriptInfo,
   args: Record<string, unknown>
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    // 将 args 作为环境变量传递（bash 脚本用 $varname 引用）
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    for (const [key, value] of Object.entries(args)) {
-      if (value !== undefined && value !== false) {
-        env[key] = value === true ? "1" : String(value);
+    const { command, spawnArgs, useEnv } = buildSpawnArgs(
+      scriptInfo.path,
+      scriptInfo.ext,
+      args
+    );
+
+    // 环境变量参数传递（Linux/macOS + Windows BAT）
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env as Record<string, string>)) {
+      env[k] = v;
+    }
+    if (useEnv) {
+      for (const [key, value] of Object.entries(args)) {
+        if (value !== undefined && value !== false) {
+          env[key] = value === true ? "1" : String(value);
+        }
       }
     }
 
-    const child = spawn(scriptPath, [], {
+    const child = spawn(command, spawnArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30_000,
       env,
@@ -220,19 +309,19 @@ function runScript(
     let stdout = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: { toString(): string }) => {
       stdout += chunk.toString();
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: { toString(): string }) => {
       stderr += chunk.toString();
     });
 
-    child.on("error", (err) => {
+    child.on("error", (err: Error) => {
       reject(new Error(`Script execution error: ${err.message}`));
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code: number | null) => {
       if (code !== 0) {
         reject(
           new Error(
@@ -240,7 +329,6 @@ function runScript(
           )
         );
       } else {
-        // 模拟 MCP 的 content 格式以保持输出一致
         resolve({
           content: [{ type: "text", text: stdout }],
         });

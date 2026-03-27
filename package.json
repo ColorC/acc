@@ -1,7 +1,7 @@
 {
   "name": "acc",
   "version": "0.1.0",
-  "description": "Agentic CLI Center \u2014 \u628a\u4efb\u4f55\u6765\u6e90\u7684 Agent \u5de5\u5177\u7edf\u4e00\u8f6c\u6362\u4e3a bash CLI",
+  "description": "Agentic CLI Center — 把任何来源的 Agent 工具统一转换为 bash CLI",
   "type": "module",
   "bin": {
     "acc": "./dist/cli.js"
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@xenova/transformers": "^2.17.2",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"
   },

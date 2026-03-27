@@ -8,6 +8,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { platform } from "node:os";
 import type {
   Adapter,
   RawToolDef,
@@ -15,6 +16,22 @@ import type {
   ToolEntry,
   ParamDef,
 } from "../types.js";
+
+/** Windows 下常见的命令需要 .cmd 后缀才能通过 spawn 找到 */
+const WIN_CMD_WRAPPERS = new Set(["npx", "npm", "pnpm", "yarn", "node"]);
+
+/**
+ * 在 Windows 上，如果命令是无扩展名的 npm 相关工具，自动补充 .cmd。
+ * Linux/macOS 上直接返回原始命令。
+ */
+function resolveCommand(cmd: string): string {
+  if (platform() !== "win32") return cmd;
+  // 如果已有扩展名（.exe .cmd .bat）则不处理
+  if (/\.[a-z]+$/i.test(cmd)) return cmd;
+  const base = cmd.split(/[\\/]/).pop() ?? cmd;
+  if (WIN_CMD_WRAPPERS.has(base)) return `${cmd}.cmd`;
+  return cmd;
+}
 
 export class McpAdapter implements Adapter {
   readonly type = "mcp" as const;
@@ -38,7 +55,7 @@ export class McpAdapter implements Adapter {
     if (this.client) return; // 已连接
 
     this.transport = new StdioClientTransport({
-      command: this.config.command!,
+      command: resolveCommand(this.config.command!),
       args: this.config.args ?? [],
     });
 
@@ -56,7 +73,11 @@ export class McpAdapter implements Adapter {
     }
 
     const result = await this.client.listTools();
-    return (result.tools ?? []).map((tool) => ({
+    return (result.tools ?? []).map((tool: {
+      name: string;
+      description?: string;
+      inputSchema?: Record<string, unknown>;
+    }) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema as Record<string, unknown> | undefined,
